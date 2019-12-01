@@ -33,10 +33,11 @@ source activate 3dunet
 ## Data preprocessing
 You cannot run the data preprocessing code because there is no dataset. We used following command to preprocess the model.
 ```
-python nrrd_to_HDF5.py
+python CS470/nrrd_to_HDF5_0123.py
 ```
 
 ## Train
+Pretrained model is in https://drive.google.com/open?id=1moo-jRj9BQSDlQsdYo3e6wc4kbg1IgX7. Download and paste to checkpoint/191201_Final.
 You cannot train the model because there is no dataset. We used following command to train the model.
 ```
 python train.py --config resources/train_config_ce_191201v2.yaml
@@ -60,14 +61,14 @@ If this error occurs, 'ImportError: libgthread-2.0.so.0: cannot open shared obje
 apt-get update
 apt-get install libgtk2.0-dev
 ```
-If the environment is ready, type the following code. 
+If the environment is ready, type the following code. You should change `input path`, `result path` in the code. Default value is `CS470/h5_data_1130/test` and `CS470/result/191201_final`.
 ```
 python CS470/HDF5_visualize.py
 ```
 Video and accuracy will be saved to `CS470\result\191201_final_vis`.
 
 
-If you want to convert HDF5 file to nrrd file, type the following code. You can see the result with MITK (http://mitk.org/wiki/MITK) and [MITK_plugin](MITK_plugin.zip)
+If you want to convert HDF5 file to nrrd file, type the following code. You can see the result with MITK (http://mitk.org/wiki/MITK) and [MITK_plugin](MITK_plugin.zip) You should change `SourceRootPath"(test set path)`, `ResultRootPath(prediction result path)`, `HeaderRootPath (dataset header path)`, `TargetRootPath (nrrd save path)` in the code. Default value is `CS470/h5_data_1130/test`, `CS470/result/191130_p64_cdatav2`, `CS470/h5_data_1130/header`, `os.path.join(ResultRootPath,'nrrd')`.
 ```
 python CS470/HDF5_to_nrrd.py
 ```

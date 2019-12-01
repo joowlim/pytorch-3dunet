@@ -28,7 +28,7 @@ datasets:
   patch: [64, 96, 96]
   # stride between patches (make sure the the patches overlap in order to get smoother prediction maps)
 #  stride: [32, 100, 100]
-  stride: [8, 24, 24]
+  stride: [8, 32, 32]
   # path to the raw data within the H5
   raw_internal_path: raw
   # how many subprocesses to use for data loading
@@ -37,7 +37,7 @@ datasets:
   test_path:
     - 'CS470/h5_data_1130/test'
   output_path:
-    - 'CS470/result/191201_final'
+    - 'CS470/result/191201_Final'
   transformer:
     test:
       raw:
