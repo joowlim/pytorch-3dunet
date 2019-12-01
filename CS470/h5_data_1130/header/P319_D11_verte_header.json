@@ -1,0 +1,1 @@
+{"type": "float", "dimension": 3, "space": "left-posterior-superior", "sizes": [91, 71, 30], "space directions": [[-0.0, 0.439453125, 0.0], [0.0, -0.0, 0.439453125], [-1.4666666984558105, 0.0, -0.0]], "kinds": ["domain", "domain", "domain"], "endian": "little", "encoding": "gzip", "space origin": [12.3057279586792, 5.47100830078125, -167.0469970703125]}

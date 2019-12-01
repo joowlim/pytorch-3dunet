@@ -1,11 +1,11 @@
 import logging
 import os
 
+import numpy as np
 import torch
 from tensorboardX import SummaryWriter
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 
-from unet3d.utils import DefaultTensorboardFormatter
 from . import utils
 
 
@@ -35,10 +35,6 @@ class UNet3DTrainer:
         best_eval_score (float): best validation score so far (higher better)
         num_iterations (int): useful when loading the model from the checkpoint
         num_epoch (int): useful when loading the model from the checkpoint
-        tensorboard_formatter (callable): converts a given batch of input/output/target image to a series of images
-            that can be displayed in tensorboard
-        skip_train_validation (bool): if True eval_criterion is not evaluated on the training set (used mostly when
-            evaluation is expensive)
     """
 
     def __init__(self, model, optimizer, lr_scheduler, loss_criterion,
@@ -47,7 +43,7 @@ class UNet3DTrainer:
                  validate_after_iters=100, log_after_iters=100,
                  validate_iters=None, num_iterations=1, num_epoch=0,
                  eval_score_higher_is_better=True, best_eval_score=None,
-                 logger=None, tensorboard_formatter=None, skip_train_validation=False):
+                 logger=None):
         if logger is None:
             self.logger = utils.get_logger('UNet3DTrainer', level=logging.DEBUG)
         else:
@@ -79,18 +75,14 @@ class UNet3DTrainer:
             else:
                 self.best_eval_score = float('+inf')
 
-        self.writer = SummaryWriter(log_dir=os.path.join(checkpoint_dir, 'logs'))
-
-        assert tensorboard_formatter is not None, 'TensorboardFormatter must be provided'
-        self.tensorboard_formatter = tensorboard_formatter
+        self.writer = SummaryWriter(logdir=os.path.join(checkpoint_dir, 'logs'))
 
         self.num_iterations = num_iterations
         self.num_epoch = num_epoch
-        self.skip_train_validation = skip_train_validation
 
     @classmethod
     def from_checkpoint(cls, checkpoint_path, model, optimizer, lr_scheduler, loss_criterion, eval_criterion, loaders,
-                        logger=None, tensorboard_formatter=None, skip_train_validation=False):
+                        logger=None):
         logger.info(f"Loading checkpoint '{checkpoint_path}'...")
         state = utils.load_checkpoint(checkpoint_path, model, optimizer)
         logger.info(
@@ -109,9 +101,7 @@ class UNet3DTrainer:
                    validate_after_iters=state['validate_after_iters'],
                    log_after_iters=state['log_after_iters'],
                    validate_iters=state['validate_iters'],
-                   logger=logger,
-                   tensorboard_formatter=tensorboard_formatter,
-                   skip_train_validation=skip_train_validation)
+                   logger=logger)
 
     @classmethod
     def from_pretrained(cls, pre_trained, model, optimizer, lr_scheduler, loss_criterion, eval_criterion,
@@ -120,7 +110,7 @@ class UNet3DTrainer:
                         validate_after_iters=100, log_after_iters=100,
                         validate_iters=None, num_iterations=1, num_epoch=0,
                         eval_score_higher_is_better=True, best_eval_score=None,
-                        logger=None, tensorboard_formatter=None, skip_train_validation=False):
+                        logger=None):
         logger.info(f"Logging pre-trained model from '{pre_trained}'...")
         utils.load_checkpoint(pre_trained, model, None)
         checkpoint_dir = os.path.split(pre_trained)[0]
@@ -136,9 +126,7 @@ class UNet3DTrainer:
                    validate_after_iters=validate_after_iters,
                    log_after_iters=log_after_iters,
                    validate_iters=validate_iters,
-                   logger=logger,
-                   tensorboard_formatter=tensorboard_formatter,
-                   skip_train_validation=skip_train_validation)
+                   logger=logger)
 
     def fit(self):
         for _ in range(self.num_epoch, self.max_num_epochs):
@@ -166,10 +154,19 @@ class UNet3DTrainer:
         self.model.train()
 
         for i, t in enumerate(train_loader):
-            self.logger.info(
-                f'Training iteration {self.num_iterations}. Batch {i}. Epoch [{self.num_epoch}/{self.max_num_epochs - 1}]')
+            #print()
+            #print()
+            if self.num_iterations % self.log_after_iters ==0:
+                self.logger.info(
+                    f'Training iteration {self.num_iterations}. Batch {i}. Epoch [{self.num_epoch}/{self.max_num_epochs - 1}]')
 
             input, target, weight = self._split_training_batch(t)
+
+            #print('input size:',input.size())
+            #print('target size:', target.size())
+            #print('weight size:', weight.size())
+
+            #exit(0)
 
             output, loss = self._forward_pass(input, target, weight)
 
@@ -199,13 +196,12 @@ class UNet3DTrainer:
             if self.num_iterations % self.log_after_iters == 0:
                 # if model contains final_activation layer for normalizing logits apply it, otherwise both
                 # the evaluation metric as well as images in tensorboard will be incorrectly computed
-                if hasattr(self.model, 'final_activation') and self.model.final_activation is not None:
+                if hasattr(self.model, 'final_activation'):
                     output = self.model.final_activation(output)
 
                 # compute eval criterion
-                if not self.skip_train_validation:
-                    eval_score = self.eval_criterion(output, target)
-                    train_eval_scores.update(eval_score.item(), self._batch_size(input))
+                eval_score = self.eval_criterion(output, target)
+                train_eval_scores.update(eval_score.item(), self._batch_size(input))
 
                 # log stats, params and images
                 self.logger.info(
@@ -229,30 +225,34 @@ class UNet3DTrainer:
         val_losses = utils.RunningAverage()
         val_scores = utils.RunningAverage()
 
-        with torch.no_grad():
-            for i, t in enumerate(val_loader):
-                self.logger.info(f'Validation iteration {i}')
+        try:
+            # set the model in evaluation mode; final_activation doesn't need to be called explicitly
+            self.model.eval()
+            with torch.no_grad():
+                for i, t in enumerate(val_loader):
+                    #self.logger.info(f'Validation iteration {i}')
 
-                input, target, weight = self._split_training_batch(t)
+                    input, target, weight = self._split_training_batch(t)
 
-                output, loss = self._forward_pass(input, target, weight)
-                val_losses.update(loss.item(), self._batch_size(input))
+                    output, loss = self._forward_pass(input, target, weight)
+                    val_losses.update(loss.item(), self._batch_size(input))
 
-                # if model contains final_activation layer for normalizing logits apply it, otherwise both
-                # the evaluation metric will be incorrectly computed
-                if hasattr(self.model, 'final_activation') and self.model.final_activation is not None:
-                    output = self.model.final_activation(output)
+                    eval_score = self.eval_criterion(output, target)
+                    #print('eval score:',eval_score.item())
+                    #print('batchsize:',self._batch_size(input))
+                    val_scores.update(eval_score.item(), self._batch_size(input))
 
-                eval_score = self.eval_criterion(output, target)
-                val_scores.update(eval_score.item(), self._batch_size(input))
+                    if self.validate_iters is not None and self.validate_iters <= i:
+                        # stop validation
+                        break
 
-                if self.validate_iters is not None and self.validate_iters <= i:
-                    # stop validation
-                    break
-
-            self._log_stats('val', val_losses.avg, val_scores.avg)
-            self.logger.info(f'Validation finished. Loss: {val_losses.avg}. Evaluation score: {val_scores.avg}')
-            return val_scores.avg
+                self._log_stats('val', val_losses.avg, val_scores.avg)
+                self.logger.info(f'Validation iteration {i} done')
+                self.logger.info(f'Validation finished. Loss: {val_losses.avg}. Evaluation score: {val_scores.avg}')
+                return val_scores.avg
+        finally:
+            # set back in training mode
+            self.model.train()
 
     def _split_training_batch(self, t):
         def _move_to_device(input):
@@ -271,11 +271,22 @@ class UNet3DTrainer:
 
     def _forward_pass(self, input, target, weight=None):
         # forward pass
+        #print('input size:',input.shape)
         output = self.model(input)
-
+        #print('output size:', output.shape)
+        #print('target size:', target.shape)
+        #print(output.dim(), target.dim())
+        #if target.dim() < output.dim():
+        #    target = target.unsqueeze(0)
+        #print('target:',target.shape)
+        #maxval = target.max()
+        #print('output:',output.shape,output.type())
+        #print('target:',target.shape, target.type(),target[0,0,0,0].cpu())
+        #exit(0)
         # compute the loss
         if weight is None:
             loss = self.loss_criterion(output, target)
+            #print('!')
         else:
             loss = self.loss_criterion(output, target, weight)
 
@@ -344,8 +355,39 @@ class UNet3DTrainer:
                 img_sources[name] = batch.data.cpu().numpy()
 
         for name, batch in img_sources.items():
-            for tag, image in self.tensorboard_formatter(name, batch):
-                self.writer.add_image(tag, image, self.num_iterations, dataformats='CHW')
+            for tag, image in self._images_from_batch(name, batch):
+                self.writer.add_image(tag, image, self.num_iterations, dataformats='HW')
+
+    def _images_from_batch(self, name, batch):
+        tag_template = '{}/batch_{}/channel_{}/slice_{}'
+
+        tagged_images = []
+
+        if batch.ndim == 5:
+            # NCDHW
+            slice_idx = batch.shape[2] // 2  # get the middle slice
+            for batch_idx in range(batch.shape[0]):
+                for channel_idx in range(batch.shape[1]):
+                    tag = tag_template.format(name, batch_idx, channel_idx, slice_idx)
+                    img = batch[batch_idx, channel_idx, slice_idx, ...]
+                    tagged_images.append((tag, self._normalize_img(img)))
+        else:
+            # batch has no channel dim: NDHW
+            slice_idx = batch.shape[1] // 2  # get the middle slice
+            for batch_idx in range(batch.shape[0]):
+                tag = tag_template.format(name, batch_idx, 0, slice_idx)
+                img = batch[batch_idx, slice_idx, ...]
+                tagged_images.append((tag, self._normalize_img(img)))
+
+        return tagged_images
+
+    @staticmethod
+    def _normalize_img(img):
+        ## << [ SC : exception divide 0 ]
+        if np.ptp(img)!=0:
+            return (img - np.min(img)) / np.ptp(img)
+        else:
+            return img
 
     @staticmethod
     def _batch_size(input):

@@ -13,12 +13,12 @@ from unet3d.losses import get_loss_criterion
 from unet3d.metrics import get_evaluation_metric
 from unet3d.model import get_model
 from unet3d.trainer import UNet3DTrainer
-from unet3d.utils import get_logger, DefaultTensorboardFormatter
+from unet3d.utils import get_logger
 
 CONFIG_BASE = {
     'model': {
         'name': 'UNet3D',
-        'in_channels': 3,
+        'in_channels': 1,
         'out_channels': 2,
         'f_maps': 16
     },
@@ -141,7 +141,7 @@ class TestUNet3DTrainer:
         test_config['loaders']['transformer']['train']['label'][0]['dtype'] = label_dtype
         test_config['loaders']['transformer']['test']['label'][0]['dtype'] = label_dtype
 
-        train, val = TestUNet3DTrainer._create_random_dataset((3, 128, 128, 128), (3, 64, 64, 64), binary_loss)
+        train, val = TestUNet3DTrainer._create_random_dataset((128, 128, 128), (64, 64, 64), binary_loss)
         test_config['loaders']['train_path'] = [train]
         test_config['loaders']['val_path'] = [val]
 
@@ -154,7 +154,6 @@ class TestUNet3DTrainer:
 
         logger = get_logger('UNet3DTrainer', logging.DEBUG)
 
-        formatter = DefaultTensorboardFormatter()
         trainer = UNet3DTrainer(model, optimizer, lr_scheduler,
                                 loss_criterion, eval_criterion,
                                 device, loaders, tmpdir,
@@ -162,13 +161,13 @@ class TestUNet3DTrainer:
                                 log_after_iters=log_after_iters,
                                 validate_after_iters=validate_after_iters,
                                 max_num_iterations=max_num_iterations,
-                                logger=logger, tensorboard_formatter=formatter)
+                                logger=logger)
         trainer.fit()
         # test loading the trainer from the checkpoint
         trainer = UNet3DTrainer.from_checkpoint(os.path.join(tmpdir, 'last_checkpoint.pytorch'),
                                                 model, optimizer, lr_scheduler,
                                                 loss_criterion, eval_criterion,
-                                                loaders, logger=logger, tensorboard_formatter=formatter)
+                                                loaders, logger=logger)
         return trainer
 
     @staticmethod
@@ -179,18 +178,13 @@ class TestUNet3DTrainer:
             tmp = NamedTemporaryFile(delete=False)
 
             with h5py.File(tmp.name, 'w') as f:
-                l_shape = w_shape = shape
-                # make sure that label and weight tensors are 3D
-                if len(shape) == 4:
-                    l_shape = shape[1:]
-                    w_shape = shape[1:]
-
                 if channel_per_class:
-                    l_shape = (2,) + l_shape
-
+                    l_shape = (2,) + shape
+                else:
+                    l_shape = shape
                 f.create_dataset('raw', data=np.random.rand(*shape))
                 f.create_dataset('label', data=np.random.randint(0, 2, l_shape))
-                f.create_dataset('weight_map', data=np.random.rand(*w_shape))
+                f.create_dataset('weight_map', data=np.random.rand(*shape))
 
             result.append(tmp.name)
 

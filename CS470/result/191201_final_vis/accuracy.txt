@@ -1,0 +1,2 @@
+Average iou : 0.663045
+Average iou : 0.765869

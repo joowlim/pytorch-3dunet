@@ -4,9 +4,6 @@ from torch import nn as nn
 from torch.autograd import Variable
 from torch.nn import MSELoss, SmoothL1Loss, L1Loss
 
-from embeddings.contrastive_loss import ContrastiveLoss
-from unet3d.utils import expand_as_one_hot
-
 
 def compute_per_channel_dice(input, target, epsilon=1e-5, ignore_index=None, weight=None):
     # assumes that input is a normalized probability
@@ -148,6 +145,31 @@ class WeightedCrossEntropyLoss(nn.Module):
         return class_weights
 
 
+class IndependentCrossEntropyLoss(nn.Module):
+    """
+    Independently compute cross entropy for pmma and vert, then sum two values
+    """
+
+    def __init__(self, weight=None, ignore_index=-1):
+        super(IndependentCrossEntropyLoss, self).__init__()
+        self.register_buffer('weight', weight)
+        self.ignore_index = ignore_index
+
+        self.softmax = nn.Softmax(dim=1)
+        # self.bce = nn.BCELoss() # Binary cross entropy loss
+        self.mse = nn.MSELoss()
+
+    def forward(self, input, target):
+        input_softmax = self.softmax(input)
+        input_pmma = input_softmax[:,1,:,:,:] + input_softmax[:,3,:,:,:]
+        input_vert = input_softmax[:,2,:,:,:] + input_softmax[:,3,:,:,:]
+        target_pmma = ((target == 1) | (target == 3)).float()
+        target_vert = ((target == 2) | (target == 3)).float()
+        bce_pmma = self.mse(input_pmma, target_pmma)
+        bce_vert = self.mse(input_vert, target_vert)
+        return (bce_pmma + bce_vert)
+
+
 class BCELossWrapper:
     """
     Wrapper around BCE loss functions allowing to pass 'ignore_index' as well as 'skip_last_target' option.
@@ -286,7 +308,42 @@ def flatten(tensor):
     # Transpose: (N, C, D, H, W) -> (C, N, D, H, W)
     transposed = tensor.permute(axis_order)
     # Flatten: (C, N, D, H, W) -> (C, N * D * H * W)
-    return transposed.contiguous().view(C, -1)
+    return transposed.view(C, -1)
+
+
+def expand_as_one_hot(input, C, ignore_index=None):
+    """
+    Converts NxDxHxW label image to NxCxDxHxW, where each label gets converted to its corresponding one-hot vector
+    :param input: 4D input image (NxDxHxW)
+    :param C: number of channels/labels
+    :param ignore_index: ignore index to be kept during the expansion
+    :return: 5D output image (NxCxDxHxW)
+    """
+    assert input.dim() == 4
+
+    shape = input.size()
+    shape = list(shape)
+    shape.insert(1, C)
+    shape = tuple(shape)
+
+    # expand the input tensor to Nx1xDxHxW
+    src = input.unsqueeze(0)
+
+    if ignore_index is not None:
+        # create ignore_index mask for the result
+        expanded_src = src.expand(shape)
+        mask = expanded_src == ignore_index
+        # clone the src tensor and zero out ignore_index in the input
+        src = src.clone()
+        src[src == ignore_index] = 0
+        # scatter to get the one-hot tensor
+        result = torch.zeros(shape).to(input.device).scatter_(1, src, 1)
+        # bring back the ignore_index in the result
+        result[mask] = ignore_index
+        return result
+    else:
+        # scatter to get the one-hot tensor
+        return torch.zeros(shape).to(input.device).scatter_(1, src, 1)
 
 
 SUPPORTED_LOSSES = ['BCEWithLogitsLoss', 'CrossEntropyLoss', 'WeightedCrossEntropyLoss', 'PixelWiseCrossEntropyLoss',
@@ -325,6 +382,10 @@ def get_loss_criterion(config):
         if ignore_index is None:
             ignore_index = -100  # use the default 'ignore_index' as defined in the CrossEntropyLoss
         return WeightedCrossEntropyLoss(weight=weight, ignore_index=ignore_index)
+    elif name == 'IndependentCrossEntropyLoss':
+        if ignore_index is None:
+            ignore_index = -100  # use the default 'ignore_index' as defined in the CrossEntropyLoss
+        return IndependentCrossEntropyLoss(weight=weight, ignore_index=ignore_index)
     elif name == 'PixelWiseCrossEntropyLoss':
         return PixelWiseCrossEntropyLoss(class_weights=weight, ignore_index=ignore_index)
     elif name == 'GeneralizedDiceLoss':
@@ -345,8 +406,5 @@ def get_loss_criterion(config):
         return SmoothL1Loss()
     elif name == 'L1Loss':
         return L1Loss()
-    elif name == 'ContrastiveLoss':
-        return ContrastiveLoss(loss_config['delta_var'], loss_config['delta_dist'], loss_config['norm'],
-                               loss_config['alpha'], loss_config['beta'], loss_config['gamma'])
     else:
         raise RuntimeError(f"Unsupported loss function: '{name}'. Supported losses: {SUPPORTED_LOSSES}")

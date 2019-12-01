@@ -1,6 +1,6 @@
 import numpy as np
 
-from augment.transforms import RandomLabelToAffinities, LabelToAffinities, Transformer, Relabel
+from augment.transforms import RandomLabelToAffinities, LabelToAffinities, Transformer
 
 
 class TestTransforms:
@@ -52,20 +52,13 @@ class TestTransforms:
         assert result.shape == (6,) + label.shape
         assert np.array_equal(np.unique(result), [0, 1])
 
-    def test_relabel(self):
-        label = np.array([[10, 10, 10], [0, 0, 0], [5, 5, 5]])
-        r = Relabel()
-        result = r(label)
-        assert np.array_equal(result, np.array([[2, 2, 2], [0, 0, 0], [1, 1, 1]]))
-
     def test_BaseTransformer(self):
         config = {
             'raw': [{'name': 'Normalize'}, {'name': 'ToTensor', 'expand_dims': True}],
             'label': [{'name': 'ToTensor', 'expand_dims': False, 'dtype': 'long'}],
             'weight': [{'name': 'ToTensor', 'expand_dims': False}]
         }
-        base_config = {'mean': 0, 'std': 1}
-        transformer = Transformer(config, base_config)
+        transformer = Transformer(config, 0, 1)
         raw_transforms = transformer.raw_transform().transforms
         assert raw_transforms[0].mean == 0
         assert raw_transforms[0].std == 1
@@ -91,8 +84,7 @@ class TestTransforms:
                 {'name': 'ToTensor', 'expand_dims': False, 'dtype': 'long'}
             ]
         }
-        base_config = {'mean': 0, 'std': 1}
-        transformer = Transformer(config, base_config)
+        transformer = Transformer(config, 0, 1)
         raw_transforms = transformer.raw_transform().transforms
         assert raw_transforms[0].mean == 0
         assert raw_transforms[0].std == 1
@@ -118,8 +110,7 @@ class TestTransforms:
                 {'name': 'ToTensor', 'expand_dims': False, 'dtype': 'long'}
             ]
         }
-        base_config = {'mean': 0, 'std': 1}
-        transformer = Transformer(config, base_config)
+        transformer = Transformer(config, 0, 1)
         raw_transforms = transformer.raw_transform().transforms
         assert raw_transforms[0].mean == 0
         assert raw_transforms[0].std == 1
@@ -147,8 +138,7 @@ class TestTransforms:
                 {'name': 'ToTensor', 'expand_dims': False, 'dtype': 'long'}
             ]
         }
-        base_config = {'mean': 0, 'std': 1}
-        transformer = Transformer(config, base_config)
+        transformer = Transformer(config, 0, 1)
         raw_transforms = transformer.raw_transform().transforms
         assert raw_transforms[0].mean == 0
         assert raw_transforms[0].std == 1
@@ -181,8 +171,7 @@ class TestTransforms:
                 {'name': 'ToTensor', 'expand_dims': False, 'dtype': 'long'}
             ]
         }
-        base_config = {'mean': 0, 'std': 1}
-        transformer = Transformer(config, base_config)
+        transformer = Transformer(config, 0, 1)
         label_transforms = transformer.label_transform().transforms
         assert label_transforms[3].offsets == (1, 2, 3, 4)
 

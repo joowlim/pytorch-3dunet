@@ -8,9 +8,9 @@ from datasets.hdf5 import get_train_loaders
 from unet3d.config import load_config
 from unet3d.losses import get_loss_criterion
 from unet3d.metrics import get_evaluation_metric
-from unet3d.model import get_model
-from unet3d.trainer import UNet3DTrainer
-from unet3d.utils import get_logger, get_tensorboard_formatter
+from unet3d.model_191127 import get_model
+from unet3d.trainer_191127 import UNet3DTrainer
+from unet3d.utils import get_logger
 from unet3d.utils import get_number_of_learnable_parameters
 
 
@@ -20,17 +20,13 @@ def _create_trainer(config, model, optimizer, lr_scheduler, loss_criterion, eval
 
     resume = trainer_config.get('resume', None)
     pre_trained = trainer_config.get('pre_trained', None)
-    skip_train_validation = trainer_config.get('skip_train_validation', False)
-
-    # get tensorboard formatter
-    tensorboard_formatter = get_tensorboard_formatter(trainer_config.get('tensorboard_formatter', None))
 
     if resume is not None:
         # continue training from a given checkpoint
         return UNet3DTrainer.from_checkpoint(resume, model,
                                              optimizer, lr_scheduler, loss_criterion,
                                              eval_criterion, loaders,
-                                             logger=logger, tensorboard_formatter=tensorboard_formatter)
+                                             logger=logger)
     elif pre_trained is not None:
         # fine-tune a given pre-trained model
         return UNet3DTrainer.from_pretrained(pre_trained, model, optimizer, lr_scheduler, loss_criterion,
@@ -40,8 +36,7 @@ def _create_trainer(config, model, optimizer, lr_scheduler, loss_criterion, eval
                                              validate_after_iters=trainer_config['validate_after_iters'],
                                              log_after_iters=trainer_config['log_after_iters'],
                                              eval_score_higher_is_better=trainer_config['eval_score_higher_is_better'],
-                                             logger=logger, tensorboard_formatter=tensorboard_formatter,
-                                             skip_train_validation=skip_train_validation)
+                                             logger=logger)
     else:
         # start training from scratch
         return UNet3DTrainer(model, optimizer, lr_scheduler, loss_criterion, eval_criterion,
@@ -51,8 +46,7 @@ def _create_trainer(config, model, optimizer, lr_scheduler, loss_criterion, eval
                              validate_after_iters=trainer_config['validate_after_iters'],
                              log_after_iters=trainer_config['log_after_iters'],
                              eval_score_higher_is_better=trainer_config['eval_score_higher_is_better'],
-                             logger=logger, tensorboard_formatter=tensorboard_formatter,
-                             skip_train_validation=skip_train_validation)
+                             logger=logger)
 
 
 def _create_optimizer(config, model):
@@ -107,6 +101,7 @@ def main():
     # Create evaluation metric
     eval_criterion = get_evaluation_metric(config)
 
+    #print('START')
     # Create data loaders
     loaders = get_train_loaders(config)
 
